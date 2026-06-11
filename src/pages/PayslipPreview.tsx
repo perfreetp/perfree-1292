@@ -20,6 +20,9 @@ const PayslipPreview = () => {
   const employees: Employee[] = (store as any).employees || [];
   const payrolls: Payroll[] = (store as any).payrolls || [];
   const payslips: Payslip[] = (store as any).payslips || [];
+  const leaveRecords: any[] = (store as any).leaveRecords || [];
+  const exceptions: any[] = (store as any).exceptions || [];
+  const overtimeRecords: any[] = (store as any).overtimeRecords || [];
   const currentMonth: string = (store as any).currentMonth || dayjs().subtract(1, 'month').format('YYYY-MM');
 
   const [dept, setDept] = useState('全部');
@@ -189,6 +192,26 @@ const PayslipPreview = () => {
     const { payroll, payslip, emp } = currentP;
     const incomes = payroll.items.filter((i) => i.type === 'income');
     const deductions = payroll.items.filter((i) => i.type === 'deduction');
+
+    const empLeaves = leaveRecords.filter((l: any) => l.employeeId === emp.id && l.startDate.startsWith(currentMonth));
+    const empExceptions = exceptions.filter((e: any) => e.employeeId === emp.id && e.date.startsWith(currentMonth));
+    const empOvertimes = overtimeRecords.filter((o: any) => o.employeeId === emp.id && o.date.startsWith(currentMonth));
+
+    const lateList = empExceptions.filter((e: any) => e.type === 'late');
+    const earlyList = empExceptions.filter((e: any) => e.type === 'early');
+    const absentList = empExceptions.filter((e: any) => e.type === 'absent');
+    const missList = empExceptions.filter((e: any) => e.type === 'missing_punch');
+
+    const lateTotalMin = lateList.reduce((s: number, e: any) => s + (e.minutes || 0), 0);
+    const earlyTotalMin = earlyList.reduce((s: number, e: any) => s + (e.minutes || 0), 0);
+    const leaveTotalDays = empLeaves.reduce((s: number, l: any) => s + (l.days || 0), 0);
+    const otTotalHours = empOvertimes.reduce((s: number, o: any) => s + (o.hours || 0), 0);
+
+    const dailyRecords: any[] = [];
+    empExceptions.forEach((e: any) => dailyRecords.push({ date: e.date, type: '异常', subType: e.type, desc: e.type === 'late' ? `迟到${e.minutes}分` : e.type === 'early' ? `早退${e.minutes}分` : e.type === 'absent' ? '旷工' : '缺卡', amount: e.handled ? 0 : null, handled: e.handled }));
+    empLeaves.forEach((l: any) => dailyRecords.push({ date: l.startDate, type: '请假', subType: l.type, desc: `${l.type} ${l.days}天`, amount: l.deductAmount || 0 }));
+    empOvertimes.forEach((o: any) => dailyRecords.push({ date: o.date, type: '加班', subType: o.type, desc: `${o.type === 'normal' ? '平时' : o.type === 'weekend' ? '周末' : '节假日'}加班 ${o.hours}小时`, amount: o.payAmount || 0 }));
+    dailyRecords.sort((a, b) => a.date.localeCompare(b.date));
     return (
       <div className="payroll-preview" id="print-area">
         <h2>员工工资单</h2>
@@ -255,6 +278,72 @@ const PayslipPreview = () => {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div className="payroll-section">
+          <h3>考勤明细（{currentMonth}月）</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+            <div style={{ padding: 10, background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 600, color: '#fa8c16' }}>{lateList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>次 / {lateTotalMin}分</span></div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>迟到</div>
+            </div>
+            <div style={{ padding: 10, background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 600, color: '#fa8c16' }}>{earlyList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>次 / {earlyTotalMin}分</span></div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>早退</div>
+            </div>
+            <div style={{ padding: 10, background: '#fff1f0', border: '1px solid #ffa39e', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 600, color: '#ff4d4f' }}>{absentList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>天</span></div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>旷工</div>
+            </div>
+            <div style={{ padding: 10, background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 600, color: '#faad14' }}>{missList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>次</span></div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>缺卡</div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+            <div style={{ padding: 10, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#52c41a' }}>{leaveTotalDays}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>天</span></div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>请假</div>
+            </div>
+            <div style={{ padding: 10, background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff' }}>{otTotalHours}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>小时</span></div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>加班</div>
+            </div>
+            <div style={{ padding: 10, background: '#f9f0ff', border: '1px solid #d3adf7', borderRadius: 6, textAlign: 'center' }}>
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#722ed1' }}>¥{payroll.lateDeduction + payroll.leaveDeduction}</div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>考勤扣款合计</div>
+            </div>
+          </div>
+
+          {dailyRecords.length > 0 && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 600, margin: '12px 0 8px', color: 'rgba(0,0,0,0.85)' }}>每日明细</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ background: '#fafafa' }}>
+                  <tr>
+                    <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #f0f0f0', width: '22%' }}>日期</th>
+                    <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #f0f0f0', width: '15%' }}>类型</th>
+                    <th style={{ padding: '6px 10px', textAlign: 'left', border: '1px solid #f0f0f0', width: '43%' }}>说明</th>
+                    <th style={{ padding: '6px 10px', textAlign: 'right', border: '1px solid #f0f0f0' }}>金额</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyRecords.map((r: any, idx: number) => (
+                    <tr key={idx} style={r.handled ? { background: '#f5f5f5', textDecoration: 'line-through', opacity: 0.7 } : {}}>
+                      <td style={{ padding: '6px 10px', border: '1px solid #f0f0f0' }}>{r.date}</td>
+                      <td style={{ padding: '6px 10px', border: '1px solid #f0f0f0' }}>
+                        <Tag color={r.type === '异常' ? 'orange' : r.type === '请假' ? 'green' : 'blue'} size="small">{r.type}</Tag>
+                      </td>
+                      <td style={{ padding: '6px 10px', border: '1px solid #f0f0f0' }}>{r.desc}{r.handled ? '（已处理）' : ''}</td>
+                      <td style={{ padding: '6px 10px', border: '1px solid #f0f0f0', textAlign: 'right' }}>
+                        {r.amount === null ? '-' : (r.type === '加班' ? <span style={{ color: '#52c41a' }}>+¥{r.amount}</span> : <span style={{ color: '#ff4d4f' }}>-¥{r.amount}</span>)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
 
         <div className="payroll-net-row">

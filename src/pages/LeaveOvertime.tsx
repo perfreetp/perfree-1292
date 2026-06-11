@@ -19,11 +19,12 @@ const LEAVE_TYPES = ['年假', '事假', '病假', '婚假', '产假', '丧假',
 
 const LeaveOvertime = () => {
   const store = useAppStore();
-  const { addLeave, updateLeave, approveLeave, deleteLeave, addOvertime, updateOvertime, approveOvertime, deleteOvertime } = store;
+  const { addLeave, updateLeave, approveLeave, deleteLeave, addOvertime, updateOvertime, approveOvertime, deleteOvertime, isMonthLocked } = store;
   const employees: any[] = (store as any).employees || [];
   const leaveRecords: any[] = (store as any).leaveRecords || [];
   const overtimeRecords: any[] = (store as any).overtimeRecords || [];
   const currentMonth: string = (store as any).currentMonth || dayjs().subtract(1, 'month').format('YYYY-MM');
+  const locked = isMonthLocked(currentMonth);
 
   const empMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const departments = useMemo(() => Array.from(new Set(employees.map((e) => e.department))), [employees]);
@@ -226,10 +227,10 @@ const LeaveOvertime = () => {
     { title: '操作', width: 180, fixed: 'right' as const,
       render: (_: any, r: LeaveRecord) => (
         <Space size={4}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openLeaveEdit(r)}>编辑</Button>
-          {!r.approved && <Button size="small" type="primary" onClick={() => { approveLeave(r.id); message.success('已通过'); }}>通过</Button>}
-          <Popconfirm title="确定删除?" onConfirm={() => { deleteLeave(r.id); message.success('已删除'); }}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); openLeaveEdit(r); }}>编辑</Button>
+          {!r.approved && <Button size="small" type="primary" disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); approveLeave(r.id); message.success('已通过'); }}>通过</Button>}
+          <Popconfirm title="确定删除?" onConfirm={() => { if (locked) { message.warning('本月已结账'); return; } deleteLeave(r.id); message.success('已删除'); }} disabled={locked}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={locked}>删除</Button>
           </Popconfirm>
         </Space>
       ) },
@@ -259,10 +260,10 @@ const LeaveOvertime = () => {
     { title: '操作', width: 180, fixed: 'right' as const,
       render: (_: any, r: OvertimeRecord) => (
         <Space size={4}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openOtEdit(r)}>编辑</Button>
-          {!r.approved && <Button size="small" type="primary" onClick={() => { approveOvertime(r.id); message.success('已通过'); }}>通过</Button>}
-          <Popconfirm title="确定删除?" onConfirm={() => { deleteOvertime(r.id); message.success('已删除'); }}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); openOtEdit(r); }}>编辑</Button>
+          {!r.approved && <Button size="small" type="primary" disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); approveOvertime(r.id); message.success('已通过'); }}>通过</Button>}
+          <Popconfirm title="确定删除?" onConfirm={() => { if (locked) { message.warning('本月已结账'); return; } deleteOvertime(r.id); message.success('已删除'); }} disabled={locked}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={locked}>删除</Button>
           </Popconfirm>
         </Space>
       ) },
@@ -308,7 +309,7 @@ const LeaveOvertime = () => {
                     <Select style={{ width: 120 }} value={leaveApproved} onChange={setLeaveApproved} options={[{ label: '全部', value: 'all' }, { label: '已通过', value: 'yes' }, { label: '待审批', value: 'no' }]} />
                   </div>
                   <div className="toolbar-right">
-                    <Button type="primary" icon={<PlusOutlined />} onClick={openLeaveAdd}>新增请假</Button>
+                    <Button type="primary" icon={<PlusOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); openLeaveAdd(); }}>新增请假</Button>
                   </div>
                 </div>
                 <Divider style={{ margin: '4px 0 12px' }} />

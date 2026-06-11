@@ -20,7 +20,11 @@ interface AppState {
   payrolls: Payroll[];
   payslips: Payslip[];
   currentMonth: string;
+  lockedMonths: string[];
   setCurrentMonth: (m: string) => void;
+  lockMonth: (month: string) => void;
+  unlockMonth: (month: string) => void;
+  isMonthLocked: (month: string) => boolean;
 
   addEmployee: (e: Employee) => void;
   updateEmployee: (id: string, e: Partial<Employee>) => void;
@@ -80,8 +84,12 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       ...initialMock,
       currentMonth: initialMock.currentMonth,
+      lockedMonths: [],
 
       setCurrentMonth: (m) => set({ currentMonth: m }),
+      lockMonth: (month) => set((s) => ({ lockedMonths: s.lockedMonths.includes(month) ? s.lockedMonths : [...s.lockedMonths, month] })),
+      unlockMonth: (month) => set((s) => ({ lockedMonths: s.lockedMonths.filter((m) => m !== month) })),
+      isMonthLocked: (month) => get().lockedMonths.includes(month),
 
       addEmployee: (e) => set((s) => ({ employees: [...s.employees, e] })),
       updateEmployee: (id, e) => set((s) => ({
@@ -131,10 +139,92 @@ export const useAppStore = create<AppState>()(
       })),
       batchAddExceptions: (list) => set((s) => ({ exceptions: [...s.exceptions, ...list] })),
 
-      addMakeup: (m) => set((s) => ({ makeupRecords: [...s.makeupRecords, m] })),
-      updateMakeup: (id, m) => set((s) => ({
-        makeupRecords: s.makeupRecords.map((x) => x.id === id ? { ...x, ...m } : x),
-      })),
+      addMakeup: (m) => set((s) => {
+        if (!m.approved) {
+          return { makeupRecords: [...s.makeupRecords, m] };
+        }
+        const newMakeup = [...s.makeupRecords, m];
+        const punchIndex = s.punchRecords.findIndex((p) => p.employeeId === m.employeeId && p.date === m.date);
+        let newPunches = s.punchRecords;
+        if (punchIndex >= 0) {
+          const existing = s.punchRecords[punchIndex];
+          const updated = m.punchType === 'in'
+            ? { ...existing, punchIn: m.correctedTime }
+            : { ...existing, punchOut: m.correctedTime };
+          newPunches = s.punchRecords.map((p, i) => i === punchIndex ? updated : p);
+        } else {
+          newPunches = [
+            ...s.punchRecords,
+            {
+              id: `punch_mk_${m.id}`,
+              employeeId: m.employeeId,
+              date: m.date,
+              punchIn: m.punchType === 'in' ? m.correctedTime : undefined,
+              punchOut: m.punchType === 'out' ? m.correctedTime : undefined,
+              source: 'manual' as const,
+              remark: `补卡登记:${m.punchType === 'in' ? '上班' : '下班'}`,
+            } as any,
+          ];
+        }
+        const mkRemark = `补卡通过(${m.punchType === 'in' ? '上班' : '下班'}卡:${m.correctedTime})`;
+        const newExceptions = s.exceptions.map((e) => {
+          if (e.employeeId !== m.employeeId || e.date !== m.date) return e;
+          if (e.type === 'missing_punch') return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
+          if (e.type === 'absent') {
+            const punchNow = newPunches.find((p) => p.employeeId === m.employeeId && p.date === m.date);
+            if (punchNow && punchNow.punchIn && punchNow.punchOut) {
+              return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
+            }
+          }
+          return e;
+        });
+        return { makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions };
+      }),
+      updateMakeup: (id, m) => set((s) => {
+        const old = s.makeupRecords.find((x) => x.id === id);
+        if (!old) return s;
+        const wasApproved = old.approved;
+        const updated = { ...old, ...m };
+        const newMakeup = s.makeupRecords.map((x) => x.id === id ? updated : x);
+        if (!wasApproved && updated.approved) {
+          const punchIndex = s.punchRecords.findIndex((p) => p.employeeId === updated.employeeId && p.date === updated.date);
+          let newPunches = s.punchRecords;
+          if (punchIndex >= 0) {
+            const existing = s.punchRecords[punchIndex];
+            const upd = updated.punchType === 'in'
+              ? { ...existing, punchIn: updated.correctedTime }
+              : { ...existing, punchOut: updated.correctedTime };
+            newPunches = s.punchRecords.map((p, i) => i === punchIndex ? upd : p);
+          } else {
+            newPunches = [
+              ...s.punchRecords,
+              {
+                id: `punch_mk_${id}`,
+                employeeId: updated.employeeId,
+                date: updated.date,
+                punchIn: updated.punchType === 'in' ? updated.correctedTime : undefined,
+                punchOut: updated.punchType === 'out' ? updated.correctedTime : undefined,
+                source: 'manual' as const,
+                remark: `补卡登记:${updated.punchType === 'in' ? '上班' : '下班'}`,
+              } as any,
+            ];
+          }
+          const mkRemark = `补卡通过(${updated.punchType === 'in' ? '上班' : '下班'}卡:${updated.correctedTime})`;
+          const newExceptions = s.exceptions.map((e) => {
+            if (e.employeeId !== updated.employeeId || e.date !== updated.date) return e;
+            if (e.type === 'missing_punch') return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
+            if (e.type === 'absent') {
+              const punchNow = newPunches.find((p) => p.employeeId === updated.employeeId && p.date === updated.date);
+              if (punchNow && punchNow.punchIn && punchNow.punchOut) {
+                return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
+              }
+            }
+            return e;
+          });
+          return { makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions };
+        }
+        return { makeupRecords: newMakeup };
+      }),
       approveMakeup: (id) => set((s) => {
         const mk = s.makeupRecords.find((x) => x.id === id);
         if (!mk || mk.approved) return s;

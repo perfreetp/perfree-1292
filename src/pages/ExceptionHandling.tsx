@@ -24,11 +24,12 @@ const EXC_TYPE_LABEL: Record<string, { label: string; color: string; icon: any }
 
 const ExceptionHandling = () => {
   const store = useAppStore();
-  const { updateException, addMakeup, updateMakeup, approveMakeup } = store;
+  const { updateException, addMakeup, updateMakeup, approveMakeup, isMonthLocked } = store;
   const employees: any[] = (store as any).employees || [];
   const exceptions: any[] = (store as any).exceptions || [];
   const makeupRecords: any[] = (store as any).makeupRecords || [];
   const currentMonth: string = (store as any).currentMonth || dayjs().subtract(1, 'month').format('YYYY-MM');
+  const locked = isMonthLocked(currentMonth);
   const [dept, setDept] = useState('全部');
   const [keyword, setKeyword] = useState('');
   const [type, setType] = useState('all');
@@ -197,7 +198,7 @@ const ExceptionHandling = () => {
         <Space size={4}>
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => viewDetail(r)}>详情</Button>
           {!r.handled && (
-            <Button size="small" type="primary" onClick={() => openHandle(r)}>处理</Button>
+            <Button size="small" type="primary" disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); openHandle(r); }}>处理</Button>
           )}
         </Space>
       ) },
@@ -217,9 +218,9 @@ const ExceptionHandling = () => {
     { title: '操作', width: 180,
       render: (_: any, r: MakeupRecord) => (
         <Space size={4}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openMakeupEdit(r)}>编辑</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); openMakeupEdit(r); }}>编辑</Button>
           {!r.approved && (
-            <Button size="small" type="primary" onClick={() => { approveMakeup(r.id); message.success('已通过'); }}>通过</Button>
+            <Button size="small" type="primary" disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); approveMakeup(r.id); message.success('已通过'); }}>通过</Button>
           )}
         </Space>
       ) },

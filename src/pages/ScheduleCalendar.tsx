@@ -23,11 +23,12 @@ const SHIFT_COLORS: Record<string, string> = {
 
 const ScheduleCalendar = () => {
   const store = useAppStore();
-  const { addShift, updateShift, deleteShift, addSchedule, updateSchedule, deleteSchedule, batchAddSchedules, setCurrentMonth } = store;
+  const { addShift, updateShift, deleteShift, addSchedule, updateSchedule, deleteSchedule, batchAddSchedules, setCurrentMonth, isMonthLocked } = store;
   const employees: any[] = (store as any).employees || [];
   const shifts: any[] = (store as any).shifts || [];
   const schedules: any[] = (store as any).schedules || [];
   const currentMonth: string = (store as any).currentMonth || dayjs().format('YYYY-MM');
+  const locked = isMonthLocked(currentMonth);
   const [shiftModal, setShiftModal] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [shiftForm] = Form.useForm();

@@ -18,13 +18,14 @@ import type { PunchRecord } from '../types';
 
 const PunchImport = () => {
   const store = useAppStore();
-  const { batchImportPunch, addPunch, updatePunch, deletePunch, batchAddExceptions } = store;
+  const { batchImportPunch, addPunch, updatePunch, deletePunch, batchAddExceptions, isMonthLocked } = store;
   const employees: any[] = (store as any).employees || [];
   const punchRecords: any[] = (store as any).punchRecords || [];
   const schedules: any[] = (store as any).schedules || [];
   const shifts: any[] = (store as any).shifts || [];
   const exceptions: any[] = (store as any).exceptions || [];
   const currentMonth: string = (store as any).currentMonth || dayjs().subtract(1, 'month').format('YYYY-MM');
+  const locked = isMonthLocked(currentMonth);
   const [keyword, setKeyword] = useState('');
   const [dept, setDept] = useState('全部');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
@@ -312,8 +313,8 @@ const PunchImport = () => {
     { title: '操作', width: 150, fixed: 'right' as const,
       render: (_: any, r: PunchRecord) => (
         <Space size={4}>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => { deletePunch(r.id); message.success('已删除'); }}>删除</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); openEdit(r); }}>编辑</Button>
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); deletePunch(r.id); message.success('已删除'); }}>删除</Button>
         </Space>
       ) },
   ];
@@ -366,9 +367,9 @@ const PunchImport = () => {
           <div className="toolbar-right">
             <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>下载模板</Button>
             <Upload beforeUpload={handleUpload} showUploadList={false} accept=".xlsx,.xls">
-              <Button type="primary" icon={<UploadOutlined />}>导入Excel</Button>
+              <Button type="primary" icon={<UploadOutlined />} disabled={locked} onClick={(e) => { if (locked) { message.warning('本月已结账，无法导入'); return e?.preventDefault?.(); } }}>导入Excel</Button>
             </Upload>
-            <Button icon={<PlusOutlined />} onClick={openAdd}>手工补录</Button>
+            <Button icon={<PlusOutlined />} onClick={() => { if (locked) return message.warning('本月已结账，无法补录'); openAdd(); }} disabled={locked}>手工补录</Button>
           </div>
         </div>
 

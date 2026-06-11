@@ -8,6 +8,7 @@ import {
   CalculatorOutlined, PlusOutlined, SearchOutlined, EditOutlined,
   EyeOutlined, CheckCircleOutlined, SyncOutlined, ExportOutlined,
   UserOutlined, DollarOutlined, TeamOutlined, FileTextOutlined,
+  LockOutlined, UnlockOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAppStore, computeDepartmentSummary } from '../store/useAppStore';
@@ -23,6 +24,7 @@ const SalaryCalculation = () => {
   const {
     batchAddPayrolls, updatePayroll, reviewPayroll, confirmPayroll,
     batchAddSocialFunds, updateSocialFund, setCurrentMonth,
+    lockMonth, unlockMonth, isMonthLocked,
   } = store;
   const employees: Employee[] = (store as any).employees || [];
   const socialFunds: SocialHousingFund[] = (store as any).socialFunds || [];
@@ -31,6 +33,7 @@ const SalaryCalculation = () => {
   const exceptions: any[] = (store as any).exceptions || [];
   const overtimeRecords: any[] = (store as any).overtimeRecords || [];
   const currentMonth: string = (store as any).currentMonth || dayjs().subtract(1, 'month').format('YYYY-MM');
+  const locked = isMonthLocked(currentMonth);
 
   const [dept, setDept] = useState('全部');
   const [keyword, setKeyword] = useState('');
@@ -236,6 +239,118 @@ const SalaryCalculation = () => {
     }
   };
 
+  const recalcEmployee = (empId: string, preserved: Payroll): Payroll | null => {
+    const emp = empMap.get(empId);
+    if (!emp) return null;
+    const sf = sfMap.get(`${empId}_${currentMonth}`);
+    const personalSocial = sf ? (sf.pensionPersonal + sf.medicalPersonal + sf.unemploymentPersonal) : 0;
+    const personalHF = sf ? sf.housingFundPersonal : 0;
+    const socialPersonal = personalSocial + personalHF;
+
+    const lvTotal = (leaveRecords || []).filter((l: any) => l.employeeId === empId && l.startDate.startsWith(currentMonth) && l.approved).reduce((s: number, l: any) => s + (l.deductAmount || 0), 0);
+    const otTotal = (overtimeRecords || []).filter((o: any) => o.employeeId === empId && o.date.startsWith(currentMonth) && o.approved).reduce((s: number, o: any) => s + (o.payAmount || 0), 0);
+
+    const monthExc = (exceptions || []).filter((e: any) => e.employeeId === empId && e.date.startsWith(currentMonth) && !e.handled);
+    let lateDeduct = 0;
+    monthExc.forEach((e: any) => {
+      if (e.type === 'late' || e.type === 'early') {
+        const t = e.minutes;
+        if (t > 10 && t <= 30) lateDeduct += 50;
+        else if (t > 30 && t <= 60) lateDeduct += 100;
+        else if (t > 60) lateDeduct += 200;
+      }
+      if (e.type === 'absent') lateDeduct += calculateDailyWage(emp.baseSalary);
+    });
+
+    const bonus = preserved.bonus ?? 0;
+    const allowance = preserved.allowance ?? 0;
+    const otherIncome = preserved.otherIncome ?? 0;
+    const otherDeduction = preserved.otherDeduction ?? 0;
+    const performance = preserved.performanceSalary ?? round2(emp.baseSalary * 0.85);
+    const overtimePay = round2(otTotal);
+    const leaveDeduction = round2(lvTotal);
+    const lateDeduction = round2(lateDeduct);
+    const totalIncome = round2(emp.baseSalary + performance + overtimePay + bonus + allowance + otherIncome);
+
+    const m = parseInt(currentMonth.split('-')[1], 10);
+    let cumTaxable = 0;
+    let cumTax = 0;
+    for (let i = 1; i < m; i++) {
+      const monthStr = `${currentMonth.slice(0, 5)}${String(i).padStart(2, '0')}`;
+      const prevSf = sfMap.get(`${empId}_${monthStr}`);
+      const prevPersonal = prevSf ? prevSf.totalPersonal : (calculateSocialFund(emp.socialBase).totalPersonal + calculateHousingFund(emp.housingFundBase).housingFundPersonal);
+      const prevTaxable = Math.max(0, emp.baseSalary - prevPersonal - 5000);
+      const tax = calculateMonthlyTax(prevTaxable, cumTaxable, cumTax);
+      cumTaxable += prevTaxable;
+      cumTax += tax;
+    }
+
+    const taxableBase = totalIncome - socialPersonal - leaveDeduction - lateDeduction - otherDeduction;
+    const monthlyTaxable = Math.max(0, taxableBase - 5000);
+    const personalTax = calculateMonthlyTax(monthlyTaxable, cumTaxable, cumTax);
+
+    const totalDeduction = round2(socialPersonal + personalTax + leaveDeduction + lateDeduction + otherDeduction);
+    const netSalary = round2(totalIncome - totalDeduction);
+
+    const items: SalaryItem[] = [
+      { name: '基本工资', amount: emp.baseSalary, type: 'income', category: '固定工资' },
+      { name: '绩效工资', amount: performance, type: 'income', category: '绩效奖金' },
+      { name: '加班费', amount: overtimePay, type: 'income', category: '加班补贴' },
+      { name: '奖金', amount: bonus, type: 'income', category: '绩效奖金' },
+      { name: '岗位津贴', amount: allowance, type: 'income', category: '补贴津贴' },
+      { name: '其他收入', amount: otherIncome, type: 'income', category: '其他' },
+      { name: '养老保险个人', amount: sf?.pensionPersonal || 0, type: 'deduction', category: '社保公积金' },
+      { name: '医疗保险个人', amount: sf?.medicalPersonal || 0, type: 'deduction', category: '社保公积金' },
+      { name: '失业保险个人', amount: sf?.unemploymentPersonal || 0, type: 'deduction', category: '社保公积金' },
+      { name: '住房公积金个人', amount: personalHF, type: 'deduction', category: '社保公积金' },
+      { name: '个人所得税', amount: personalTax, type: 'deduction', category: '个人税' },
+      { name: '请假扣款', amount: leaveDeduction, type: 'deduction', category: '考勤扣款' },
+      { name: '迟到早退扣款', amount: lateDeduction, type: 'deduction', category: '考勤扣款' },
+      { name: '其他扣款', amount: otherDeduction, type: 'deduction', category: '其他' },
+    ];
+
+    return {
+      ...preserved,
+      baseSalary: emp.baseSalary,
+      performanceSalary: performance,
+      overtimePay,
+      totalIncome,
+      socialPersonal,
+      housingFundPersonal: personalHF,
+      personalTax,
+      leaveDeduction,
+      lateDeduction,
+      totalDeduction,
+      netSalary,
+      items,
+      updateTime: new Date().toISOString(),
+    };
+  };
+
+  const recalcOne = (p: Payroll) => {
+    const result = recalcEmployee(p.employeeId, p);
+    if (result) {
+      updatePayroll(p.id, result);
+      message.success('已重算，工资明细已更新');
+    }
+  };
+
+  const recalcMonth = () => {
+    if (locked) { message.warning('本月已结账，无法重算'); return; }
+    Modal.confirm({
+      title: '确认整月重算？',
+      content: '将按最新考勤、请假、加班、社保重新计算本月所有员工工资，奖金、津贴、其他收入/扣款等人工调整项会保留。',
+      onOk: () => {
+        let count = 0;
+        monthPayrolls.forEach((p: Payroll) => {
+          const r = recalcEmployee(p.employeeId, p);
+          if (r) { updatePayroll(p.id, r); count++; }
+        });
+        message.success(`已重算 ${count} 条工资单`);
+      },
+    });
+  };
+
   const exportExcel = () => {
     const data = filtered.map((p: Payroll) => {
       const emp = empMap.get(p.employeeId);
@@ -409,14 +524,15 @@ const SalaryCalculation = () => {
           {r.confirmed ? <Tag color="green">已确认</Tag> : <Tag color="default">未确认</Tag>}
         </Space>
       ) },
-    { title: '操作', width: 220, fixed: 'right' as const,
+    { title: '操作', width: 260, fixed: 'right' as const,
       render: (_: any, r: Payroll) => (
         <Space size={4} wrap>
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(r)}>详情</Button>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>调整</Button>
-          <Button type="link" size="small" onClick={() => openSfEdit(r)}>社保</Button>
+          <Button type="link" size="small" icon={<EditOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账，无法调整'); openEdit(r); }}>调整</Button>
+          <Button type="link" size="small" disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账，无法修改社保'); openSfEdit(r); }}>社保</Button>
+          <Button type="link" size="small" icon={<ReloadOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); recalcOne(r); }}>重算</Button>
           {!r.reviewed && (
-            <Button size="small" type="primary" onClick={() => { reviewPayroll(r.id, '财务主管'); message.success('已复核'); }}>复核</Button>
+            <Button size="small" type="primary" disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); reviewPayroll(r.id, '财务主管'); message.success('已复核'); }}>复核</Button>
           )}
         </Space>
       ) },
@@ -465,6 +581,24 @@ const SalaryCalculation = () => {
               options={[{ label: '全部状态', value: 'all' }, { label: '已复核', value: 'reviewed' }, { label: '待复核', value: 'unreviewed' }, { label: '已确认', value: 'confirmed' }]} />
           </div>
           <div className="toolbar-right">
+            {locked ? (
+              <Button
+                type="primary"
+                danger
+                icon={<LockOutlined />}
+                onClick={() => { Modal.confirm({ title: '确认解锁本月？', content: '解锁后可以修改打卡、排班、请假、加班、社保等数据。', onOk: () => { unlockMonth(currentMonth); message.success('已解锁'); } }); }}
+              >
+                本月已结账（点击解锁）
+              </Button>
+            ) : (
+              <Button
+                icon={<UnlockOutlined />}
+                onClick={() => { Modal.confirm({ title: '确认结账锁定本月？', content: '锁定后将无法修改打卡、排班、请假、加班、社保等数据，如需调整需先解锁。', onOk: () => { lockMonth(currentMonth); message.success('已结账锁定'); } }); }}
+              >
+                月度结账
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} onClick={recalcMonth} disabled={locked}>整月重算</Button>
             <Button icon={<SyncOutlined spin={generating} />} onClick={generatePayrolls} loading={generating} type="primary">
               {generating ? '核算中...' : '一键核算薪资'}
             </Button>
