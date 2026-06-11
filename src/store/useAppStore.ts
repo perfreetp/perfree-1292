@@ -191,10 +191,10 @@ export const useAppStore = create<AppState>()(
         if (emp.leaveDate && dayjs(emp.leaveDate).isBefore(monthStr + '-01')) return;
         const exc = s.exceptions.filter(e => e.employeeId === employeeId && e.date.startsWith(monthStr));
         const lvDeduct = s.leaveRecords
-          .filter(r => r.employeeId === employeeId && r.status === 'approved' && dayjs(r.startDate).format('YYYY-MM') === monthStr)
+          .filter(r => r.employeeId === employeeId && r.approved && dayjs(r.startDate).format('YYYY-MM') === monthStr)
           .reduce((sum, r) => sum + (r.deductAmount || 0), 0);
         const otPay = s.overtimeRecords
-          .filter(r => r.employeeId === employeeId && r.status === 'approved' && dayjs(r.overtimeDate).format('YYYY-MM') === monthStr)
+          .filter(r => r.employeeId === employeeId && r.approved && dayjs(r.overtimeDate || r.date).format('YYYY-MM') === monthStr)
           .reduce((sum, r) => sum + (r.amount || 0), 0);
         const sf = s.socialFunds.find(f => f.employeeId === employeeId && f.month === monthStr);
         const updated = recalcOnePayroll({ payroll, employee: emp, socialFund: sf, monthLeaveDeduct: lvDeduct, monthOTPay: otPay, monthExceptions: exc, monthStr });
@@ -365,10 +365,10 @@ export const useAppStore = create<AppState>()(
       approveLeave: (id) => {
         const st = get();
         const old = st.leaveRecords.find(x => x.id === id);
-        if (!old || old.status === 'approved') return;
+        if (!old || old.approved) return;
         const month = dayjs(old.startDate).format('YYYY-MM');
         if (st.lockedMonths.includes(month)) return;
-        set({ leaveRecords: st.leaveRecords.map((x) => x.id === id ? { ...x, status: 'approved' as const } : x) });
+        set({ leaveRecords: st.leaveRecords.map((x) => x.id === id ? { ...x, approved: true } : x) });
         get().recalcPayrollForEmployee(old.employeeId, month);
       },
       deleteLeave: (id) => {
@@ -398,10 +398,10 @@ export const useAppStore = create<AppState>()(
       approveOvertime: (id) => {
         const st = get();
         const old = st.overtimeRecords.find(x => x.id === id);
-        if (!old || old.status === 'approved') return;
+        if (!old || old.approved) return;
         const month = dayjs(old.overtimeDate || old.date).format('YYYY-MM');
         if (st.lockedMonths.includes(month)) return;
-        set({ overtimeRecords: st.overtimeRecords.map((x) => x.id === id ? { ...x, status: 'approved' as const } : x) });
+        set({ overtimeRecords: st.overtimeRecords.map((x) => x.id === id ? { ...x, approved: true } : x) });
         get().recalcPayrollForEmployee(old.employeeId, month);
       },
       deleteOvertime: (id) => {
@@ -469,6 +469,7 @@ export const useAppStore = create<AppState>()(
         payrolls: state.payrolls,
         payslips: state.payslips,
         currentMonth: state.currentMonth,
+        lockedMonths: state.lockedMonths,
       }),
     },
   ),

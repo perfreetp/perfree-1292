@@ -193,9 +193,9 @@ const PayslipPreview = () => {
     const incomes = payroll.items.filter((i) => i.type === 'income');
     const deductions = payroll.items.filter((i) => i.type === 'deduction');
 
-    const empLeaves = leaveRecords.filter((l: any) => l.employeeId === emp.id && l.startDate.startsWith(currentMonth));
+    const empLeaves = leaveRecords.filter((l: any) => l.employeeId === emp.id && l.approved && l.startDate.startsWith(currentMonth));
     const empExceptions = exceptions.filter((e: any) => e.employeeId === emp.id && e.date.startsWith(currentMonth));
-    const empOvertimes = overtimeRecords.filter((o: any) => o.employeeId === emp.id && o.date.startsWith(currentMonth));
+    const empOvertimes = overtimeRecords.filter((o: any) => o.employeeId === emp.id && o.approved && o.date.startsWith(currentMonth));
 
     const lateList = empExceptions.filter((e: any) => e.type === 'late');
     const earlyList = empExceptions.filter((e: any) => e.type === 'early');

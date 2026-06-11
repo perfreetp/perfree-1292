@@ -105,6 +105,7 @@ const LeaveOvertime = () => {
   }, [overtimeRecords, otType, otApproved, otDept, otKw, empMap]);
 
   const openLeaveAdd = () => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能新增请假`); return; }
     setLeaveEditing(null);
     leaveForm.resetFields();
     leaveForm.setFieldsValue({ type: '事假', approved: false });
@@ -112,6 +113,7 @@ const LeaveOvertime = () => {
   };
 
   const openLeaveEdit = (l: LeaveRecord) => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能编辑请假`); return; }
     setLeaveEditing(l);
     leaveForm.setFieldsValue({
       ...l,
@@ -122,6 +124,7 @@ const LeaveOvertime = () => {
   };
 
   const submitLeave = async () => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能保存请假`); return; }
     try {
       const v = await leaveForm.validateFields();
       const emp = employees.find((e) => e.id === v.employeeId);
@@ -157,6 +160,7 @@ const LeaveOvertime = () => {
   };
 
   const openOtAdd = () => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能登记加班`); return; }
     setOtEditing(null);
     otForm.resetFields();
     otForm.setFieldsValue({ type: 'normal', approved: false });
@@ -164,12 +168,14 @@ const LeaveOvertime = () => {
   };
 
   const openOtEdit = (o: OvertimeRecord) => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能编辑加班`); return; }
     setOtEditing(o);
     otForm.setFieldsValue({ ...o, date: dayjs(o.date) });
     setOtModal(true);
   };
 
   const submitOt = async () => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能保存加班`); return; }
     try {
       const v = await otForm.validateFields();
       const emp = employees.find((e) => e.id === v.employeeId);
@@ -374,7 +380,7 @@ const LeaveOvertime = () => {
                     <Select style={{ width: 120 }} value={otApproved} onChange={setOtApproved} options={[{ label: '全部', value: 'all' }, { label: '已通过', value: 'yes' }, { label: '待审批', value: 'no' }]} />
                   </div>
                   <div className="toolbar-right">
-                    <Button type="primary" icon={<PlusOutlined />} onClick={openOtAdd}>登记加班</Button>
+                    <Button type="primary" icon={<PlusOutlined />} disabled={locked} onClick={() => { if (locked) return message.warning('本月已结账'); openOtAdd(); }}>登记加班</Button>
                   </div>
                 </div>
                 <Divider style={{ margin: '4px 0 12px' }} />
