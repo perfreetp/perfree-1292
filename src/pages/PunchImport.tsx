@@ -7,20 +7,23 @@ import {
 import {
   UploadOutlined, PlusOutlined, SearchOutlined, FileTextOutlined,
   CheckCircleOutlined, WarningOutlined, EditOutlined, DeleteOutlined,
-  DownloadOutlined,
+  DownloadOutlined, ClockCircleOutlined, LogoutOutlined,
 } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { useAppStore } from '../store/useAppStore';
-import { genId } from '../utils/calculations';
+import { genId, parseExcelDateToStr, parseExcelTimeToStr, analyzeAttendanceExceptions } from '../utils/calculations';
 import type { PunchRecord } from '../types';
 
 const PunchImport = () => {
   const store = useAppStore();
-  const { batchImportPunch, addPunch, updatePunch, deletePunch } = store;
+  const { batchImportPunch, addPunch, updatePunch, deletePunch, batchAddExceptions } = store;
   const employees: any[] = (store as any).employees || [];
   const punchRecords: any[] = (store as any).punchRecords || [];
+  const schedules: any[] = (store as any).schedules || [];
+  const shifts: any[] = (store as any).shifts || [];
+  const exceptions: any[] = (store as any).exceptions || [];
   const currentMonth: string = (store as any).currentMonth || dayjs().subtract(1, 'month').format('YYYY-MM');
   const [keyword, setKeyword] = useState('');
   const [dept, setDept] = useState('全部');
@@ -34,6 +37,16 @@ const PunchImport = () => {
 
   const empMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const departments = useMemo(() => Array.from(new Set(employees.map((e) => e.department))), [employees]);
+
+  const excForPunchMap = useMemo(() => {
+    const m = new Map<string, any[]>();
+    exceptions.forEach((e) => {
+      const k = `${e.employeeId}_${e.date}`;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(e);
+    });
+    return m;
+  }, [exceptions]);
 
   const stats = useMemo(() => {
     const inMonth = punchRecords.filter((p) => p.date.startsWith(currentMonth));
@@ -75,9 +88,9 @@ const PunchImport = () => {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(sheet);
+        const json = XLSX.utils.sheet_to_json(sheet, { raw: true });
         const parsed: any[] = [];
         json.forEach((row: any) => {
           const keys = Object.keys(row);
@@ -96,9 +109,9 @@ const PunchImport = () => {
 
           let date: string = '';
           if (dateKey && row[dateKey]) {
-            date = dayjs(row[dateKey]).format('YYYY-MM-DD');
+            date = parseExcelDateToStr(row[dateKey]);
           } else if (timeKey && row[timeKey]) {
-            date = dayjs(row[timeKey]).format('YYYY-MM-DD');
+            date = parseExcelDateToStr(row[timeKey]);
           }
 
           if (!date) return;
@@ -107,24 +120,20 @@ const PunchImport = () => {
           let punchOut: string | undefined;
 
           if (timeKey && row[timeKey]) {
-            const time = dayjs(row[timeKey]).format('HH:mm');
-            const hour = dayjs(row[timeKey]).hour();
-            if (hour < 14) punchIn = time;
-            else punchOut = time;
+            const time = parseExcelTimeToStr(row[timeKey]);
+            if (time) {
+              const hour = parseInt(time.split(':')[0], 10);
+              if (hour < 14) punchIn = time;
+              else punchOut = time;
+            }
           }
           if (inKey && row[inKey]) {
-            if (typeof row[inKey] === 'number') {
-              punchIn = dayjs(new Date(Math.round((row[inKey] - 25569) * 86400 * 1000))).format('HH:mm');
-            } else {
-              punchIn = String(row[inKey]).slice(0, 5);
-            }
+            const t = parseExcelTimeToStr(row[inKey]);
+            if (t) punchIn = t;
           }
           if (outKey && row[outKey]) {
-            if (typeof row[outKey] === 'number') {
-              punchOut = dayjs(new Date(Math.round((row[outKey] - 25569) * 86400 * 1000))).format('HH:mm');
-            } else {
-              punchOut = String(row[outKey]).slice(0, 5);
-            }
+            const t = parseExcelTimeToStr(row[outKey]);
+            if (t) punchOut = t;
           }
 
           parsed.push({
@@ -160,7 +169,40 @@ const PunchImport = () => {
       source: d.source,
     }));
     batchImportPunch(real);
-    message.success(`成功导入 ${real.length} 条打卡记录`);
+    try {
+      const existingKeys = new Set(punchRecords.map((x) => `${x.employeeId}_${x.date}`));
+      const imported = real.filter((x) => !existingKeys.has(`${x.employeeId}_${x.date}`));
+      const combinedPunches = [...punchRecords, ...imported];
+      const monthSet = new Set<string>();
+      imported.forEach((p) => {
+        if (p.date) monthSet.add(p.date.slice(0, 7));
+      });
+      const allNewExceptions: any[] = [];
+      monthSet.forEach((m) => {
+        const anal = analyzeAttendanceExceptions({
+          punchRecords: combinedPunches,
+          schedules,
+          shifts,
+          month: m,
+        });
+        const priorKeys = new Set(
+          exceptions
+            .filter((e) => e.date.startsWith(m))
+            .map((e: any) => `${e.employeeId}_${e.date}_${e.type}`)
+        );
+        anal.forEach((e: any) => {
+          const k = `${e.employeeId}_${e.date}_${e.type}`;
+          if (!priorKeys.has(k)) {
+            priorKeys.add(k);
+            allNewExceptions.push(e);
+          }
+        });
+      });
+      if (allNewExceptions.length) batchAddExceptions(allNewExceptions);
+      message.success(`成功导入 ${imported.length} 条打卡，新增 ${allNewExceptions.length} 条考勤异常`);
+    } catch (e: any) {
+      message.success(`成功导入 ${real.length} 条打卡记录`);
+    }
     setPreviewModal(false);
     setPreviewData([]);
   };
@@ -229,9 +271,35 @@ const PunchImport = () => {
       return e ? <Tag color="blue">{e.department}</Tag> : null;
     } },
     { title: '上班打卡', dataIndex: 'punchIn', width: 110,
-      render: (v: string) => v ? <Tag color="green">{v}</Tag> : <Tag color="red" icon={<WarningOutlined />}>缺卡</Tag> },
-    { title: '下班打卡', dataIndex: 'punchOut', width: 110,
-      render: (v: string) => v ? <Tag color="green">{v}</Tag> : <Tag color="red" icon={<WarningOutlined />}>缺卡</Tag> },
+      render: (v: string, r: PunchRecord) => {
+        const list = excForPunchMap.get(`${r.employeeId}_${r.date}`) || [];
+        const hasLate = list.some((e) => e.type === 'late');
+        const tagColor = v ? (hasLate ? 'orange' : 'green') : 'red';
+        const icon = v ? (hasLate ? <ClockCircleOutlined /> : <CheckCircleOutlined />) : <WarningOutlined />;
+        return v ? <Tag color={tagColor} icon={icon}>{v}{hasLate ? ` (迟到${list.find((x) => x.type === 'late')?.minutes || 0}分)` : ''}</Tag> : <Tag color="red" icon={<WarningOutlined />}>缺卡</Tag>;
+      } },
+    { title: '下班打卡', dataIndex: 'punchOut', width: 130,
+      render: (v: string, r: PunchRecord) => {
+        const list = excForPunchMap.get(`${r.employeeId}_${r.date}`) || [];
+        const hasEarly = list.some((e) => e.type === 'early');
+        const tagColor = v ? (hasEarly ? 'orange' : 'green') : 'red';
+        return v ? <Tag color={tagColor} icon={hasEarly ? <LogoutOutlined /> : <CheckCircleOutlined />}>{v}{hasEarly ? ` (早退${list.find((x) => x.type === 'early')?.minutes || 0}分)` : ''}</Tag> : <Tag color="red" icon={<WarningOutlined />}>缺卡</Tag>;
+      } },
+    { title: '考勤异常', width: 180,
+      render: (_: any, r: PunchRecord) => {
+        const list = excForPunchMap.get(`${r.employeeId}_${r.date}`) || [];
+        if (!list.length) return <Tag color="success">正常</Tag>;
+        return (
+          <Space size={4} wrap>
+            {list.map((e) => {
+              const labelMap: Record<string, string> = { late: '迟到', early: '早退', absent: '旷工', missing_punch: '缺卡' };
+              const colorMap: Record<string, string> = { late: 'orange', early: 'orange', absent: 'red', missing_punch: 'warning' };
+              const text = e.type === 'late' || e.type === 'early' ? `${labelMap[e.type]}${e.minutes}分` : labelMap[e.type];
+              return <Tag key={e.id} color={e.handled ? 'default' : colorMap[e.type]} style={e.handled ? { textDecoration: 'line-through' } : {}}>{text}{e.handled ? '(已处理)' : ''}</Tag>;
+            })}
+          </Space>
+        );
+      } },
     { title: '状态', width: 100,
       render: (_: any, r: PunchRecord) => {
         if (r.punchIn && r.punchOut) return <Tag icon={<CheckCircleOutlined />} color="success">完整</Tag>;
@@ -308,7 +376,7 @@ const PunchImport = () => {
           rowKey="id"
           columns={columns}
           dataSource={filtered}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1700 }}
           pagination={{ pageSize: 15, showSizeChanger: true, showTotal: (t) => `共 ${t} 条` }}
         />
       </div>

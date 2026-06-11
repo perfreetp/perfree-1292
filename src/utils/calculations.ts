@@ -133,3 +133,139 @@ export function calculateDailyWage(baseSalary: number, workDays = 21.75): number
 export function calculateHourlyWage(baseSalary: number, workDays = 21.75, dailyHours = 8): number {
   return round2(calculateDailyWage(baseSalary, workDays) / dailyHours);
 }
+
+export function parseExcelDate(value: any): dayjs.Dayjs | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return isNaN(t) ? null : dayjs(value);
+  }
+  if (typeof value === 'number') {
+    if (value < 1000) return null;
+    if (value > 25000 && value < 80000) {
+      const ms = Math.round((value - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      return isNaN(d.getTime()) ? null : dayjs(d);
+    }
+    if (value > 80000) {
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : dayjs(d);
+    }
+    return null;
+  }
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (!s) return null;
+    if (/^\d{5}(\.\d+)?$/.test(s)) {
+      const n = parseFloat(s);
+      return parseExcelDate(n);
+    }
+    const d = dayjs(s);
+    return d.isValid() ? d : null;
+  }
+  return null;
+}
+
+export function parseExcelDateToStr(value: any, format = 'YYYY-MM-DD'): string {
+  const d = parseExcelDate(value);
+  return d ? d.format(format) : '';
+}
+
+export function parseExcelTimeToStr(value: any): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'number') {
+    if (value >= 0 && value < 2) {
+      const totalMinutes = Math.round(value * 24 * 60);
+      const h = Math.floor(totalMinutes / 60);
+      const m = totalMinutes % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    if (value > 25000) {
+      const d = parseExcelDate(value);
+      return d ? d.format('HH:mm') : '';
+    }
+    return '';
+  }
+  if (value instanceof Date) {
+    return dayjs(value).format('HH:mm');
+  }
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (!s) return '';
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(s)) {
+      const parts = s.split(':');
+      return `${String(Number(parts[0])).padStart(2, '0')}:${parts[1]}`;
+    }
+    const d = parseExcelDate(s);
+    return d ? d.format('HH:mm') : '';
+  }
+  return '';
+}
+
+import type { PunchRecord, Schedule, Shift, AttendanceException } from '../types';
+
+export interface AttendanceAnalyzeInput {
+  punchRecords: PunchRecord[];
+  schedules: Schedule[];
+  shifts: Shift[];
+  month?: string;
+}
+
+export function analyzeAttendanceExceptions(input: AttendanceAnalyzeInput): AttendanceException[] {
+  const { punchRecords, schedules, shifts, month } = input;
+  const shiftMap = new Map(shifts.map((s) => [s.id, s]));
+  const punchMap = new Map<string, PunchRecord>();
+  punchRecords.forEach((p) => punchMap.set(`${p.employeeId}_${p.date}`, p));
+  const exceptions: AttendanceException[] = [];
+  const excKeySet = new Set<string>();
+  const add = (e: Omit<AttendanceException, 'id'>) => {
+    const key = `${e.employeeId}_${e.date}_${e.type}`;
+    if (excKeySet.has(key)) return;
+    excKeySet.add(key);
+    exceptions.push({ ...e, id: genId('exc') });
+  };
+  schedules.forEach((sch) => {
+    if (month && !sch.date.startsWith(month)) return;
+    if (sch.type !== 'normal') return;
+    const shift = shiftMap.get(sch.shiftId);
+    if (!shift) return;
+    const punch = punchMap.get(`${sch.employeeId}_${sch.date}`);
+    const threshold = shift.lateThreshold ?? 0;
+    const earlyTh = shift.earlyThreshold ?? 0;
+    const startMin = parseTimeToMinutes(shift.startTime);
+    const endMin = parseTimeToMinutes(shift.endTime);
+    if (!punch || (!punch.punchIn && !punch.punchOut)) {
+      add({
+        employeeId: sch.employeeId, date: sch.date, type: 'absent', minutes: 0, handled: false,
+      });
+      return;
+    }
+    if (!punch.punchIn) {
+      add({
+        employeeId: sch.employeeId, date: sch.date, type: 'missing_punch', minutes: 0, handled: false,
+      });
+    } else {
+      const inMin = parseTimeToMinutes(punch.punchIn);
+      if (inMin > startMin + threshold) {
+        add({
+          employeeId: sch.employeeId, date: sch.date, type: 'late',
+          minutes: inMin - startMin, handled: false,
+        });
+      }
+    }
+    if (!punch.punchOut) {
+      add({
+        employeeId: sch.employeeId, date: sch.date, type: 'missing_punch', minutes: 0, handled: false,
+      });
+    } else {
+      const outMin = parseTimeToMinutes(punch.punchOut);
+      if (outMin < endMin - earlyTh && outMin > startMin) {
+        add({
+          employeeId: sch.employeeId, date: sch.date, type: 'early',
+          minutes: endMin - outMin, handled: false,
+        });
+      }
+    }
+  });
+  return exceptions;
+}

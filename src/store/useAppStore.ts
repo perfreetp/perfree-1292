@@ -135,9 +135,46 @@ export const useAppStore = create<AppState>()(
       updateMakeup: (id, m) => set((s) => ({
         makeupRecords: s.makeupRecords.map((x) => x.id === id ? { ...x, ...m } : x),
       })),
-      approveMakeup: (id) => set((s) => ({
-        makeupRecords: s.makeupRecords.map((x) => x.id === id ? { ...x, approved: true } : x),
-      })),
+      approveMakeup: (id) => set((s) => {
+        const mk = s.makeupRecords.find((x) => x.id === id);
+        if (!mk || mk.approved) return s;
+        const newMakeup = s.makeupRecords.map((x) => x.id === id ? { ...x, approved: true } : x);
+        const punchIndex = s.punchRecords.findIndex((p) => p.employeeId === mk.employeeId && p.date === mk.date);
+        let newPunches = s.punchRecords;
+        if (punchIndex >= 0) {
+          const existing = s.punchRecords[punchIndex];
+          const updated = mk.punchType === 'in'
+            ? { ...existing, punchIn: mk.correctedTime }
+            : { ...existing, punchOut: mk.correctedTime };
+          newPunches = s.punchRecords.map((p, i) => i === punchIndex ? updated : p);
+        } else {
+          newPunches = [
+            ...s.punchRecords,
+            {
+              id: `punch_mk_${id}`,
+              employeeId: mk.employeeId,
+              date: mk.date,
+              punchIn: mk.punchType === 'in' ? mk.correctedTime : undefined,
+              punchOut: mk.punchType === 'out' ? mk.correctedTime : undefined,
+              source: 'manual' as const,
+              remark: `补卡登记:${mk.punchType === 'in' ? '上班' : '下班'}`,
+            } as any,
+          ];
+        }
+        const mkRemark = `补卡通过(${mk.punchType === 'in' ? '上班' : '下班'}卡:${mk.correctedTime})`;
+        const newExceptions = s.exceptions.map((e) => {
+          if (e.employeeId !== mk.employeeId || e.date !== mk.date) return e;
+          if (e.type === 'missing_punch') return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
+          if (e.type === 'absent') {
+            const punchNow = newPunches.find((p) => p.employeeId === mk.employeeId && p.date === mk.date);
+            if (punchNow && punchNow.punchIn && punchNow.punchOut) {
+              return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
+            }
+          }
+          return e;
+        });
+        return { makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions };
+      }),
 
       addLeave: (l) => set((s) => ({ leaveRecords: [...s.leaveRecords, l] })),
       updateLeave: (id, l) => set((s) => ({

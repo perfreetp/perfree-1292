@@ -42,6 +42,7 @@ const SalaryCalculation = () => {
   const [editForm] = Form.useForm();
   const [sfModal, setSfModal] = useState(false);
   const [editingSf, setEditingSf] = useState<SocialHousingFund | null>(null);
+  const [sfContext, setSfContext] = useState<{ employeeId: string | null; payrollId: string | null }>({ employeeId: null, payrollId: null });
   const [sfForm] = Form.useForm();
   const [generating, setGenerating] = useState(false);
 
@@ -282,6 +283,7 @@ const SalaryCalculation = () => {
   const openSfEdit = (p: Payroll) => {
     const sf = sfMap.get(`${p.employeeId}_${currentMonth}`);
     setEditingSf(sf || null);
+    setSfContext({ employeeId: p.employeeId, payrollId: p.id });
     sfForm.resetFields();
     if (sf) {
       sfForm.setFieldsValue(sf);
@@ -315,10 +317,15 @@ const SalaryCalculation = () => {
   const submitSf = async () => {
     try {
       const v = await sfForm.validateFields();
-      const sf = sfMap.get(`${editPayroll?.employeeId}_${currentMonth}`);
+      const employeeId = sfContext.employeeId;
+      if (!employeeId) {
+        message.error('未找到对应员工');
+        return;
+      }
+      const sf = sfMap.get(`${employeeId}_${currentMonth}`);
       const data = {
         ...v,
-        employeeId: editPayroll?.employeeId,
+        employeeId,
         month: currentMonth,
         totalPersonal: v.pensionPersonal + v.medicalPersonal + v.unemploymentPersonal + v.housingFundPersonal,
         totalCompany: v.pensionCompany + v.medicalCompany + v.unemploymentCompany + v.injuryCompany + v.maternityCompany + v.housingFundCompany,
@@ -329,7 +336,39 @@ const SalaryCalculation = () => {
         const { batchAddSocialFunds: addFn } = useAppStore.getState() as any;
         addFn([{ ...data, id: genId('sf') }]);
       }
-      message.success('社保公积金已更新');
+      const personalSocial = data.pensionPersonal + data.medicalPersonal + data.unemploymentPersonal;
+      const hfP = data.housingFundPersonal;
+      const totalP = personalSocial + hfP;
+      const prId = sfContext.payrollId;
+      if (prId) {
+        const pr = payrolls.find((x) => x.id === prId);
+        if (pr) {
+          const newItems = pr.items.map((it) => {
+            if (it.category === '社保公积金') {
+              if (it.name === '养老保险个人') return { ...it, amount: data.pensionPersonal };
+              if (it.name === '医疗保险个人') return { ...it, amount: data.medicalPersonal };
+              if (it.name === '失业保险个人') return { ...it, amount: data.unemploymentPersonal };
+              if (it.name === '住房公积金个人') return { ...it, amount: data.housingFundPersonal };
+            }
+            return it;
+          });
+          const taxBase = pr.totalIncome - totalP - pr.leaveDeduction - pr.lateDeduction;
+          const monthlyTaxable = Math.max(0, taxBase - 5000);
+          const tax = calculateMonthlyTax(monthlyTaxable, 0, 0);
+          const newTaxItem = newItems.map((it) => it.category === '个人税' ? { ...it, amount: tax } : it);
+          const totalDed = round2(totalP + tax + pr.leaveDeduction + pr.lateDeduction + pr.otherDeduction);
+          const net = round2(pr.totalIncome - totalDed);
+          updatePayroll(prId, {
+            socialPersonal: totalP,
+            housingFundPersonal: hfP,
+            personalTax: tax,
+            totalDeduction: totalDed,
+            netSalary: net,
+            items: newTaxItem,
+          });
+        }
+      }
+      message.success('社保公积金已更新，工资明细同步调整');
       setSfModal(false);
     } catch (e) {
       //
