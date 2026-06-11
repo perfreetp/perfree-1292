@@ -106,6 +106,7 @@ const ScheduleCalendar = () => {
   };
 
   const applyShiftToAll = (shiftId: string) => {
+    if (locked) { message.warning(`${currentMonth} 已结账，如需调整排班请先在薪资计算页解锁`); return; }
     const list: Schedule[] = [];
     dates.forEach((d) => {
       if (isWeekend(d)) return;
@@ -124,6 +125,7 @@ const ScheduleCalendar = () => {
   };
 
   const openSchEdit = (empId: string, date: string) => {
+    if (locked) { message.warning(`${currentMonth} 已结账，如需调整排班请先在薪资计算页解锁`); return; }
     const key = `${empId}_${date}`;
     const existing = scheduleMap.get(key);
     setEditingSch(existing || null);
@@ -139,6 +141,7 @@ const ScheduleCalendar = () => {
   };
 
   const submitSch = async () => {
+    if (locked) { message.warning(`${currentMonth} 已结账，如需调整排班请先在薪资计算页解锁`); return; }
     try {
       const v = await schForm.validateFields();
       const data = {
@@ -247,7 +250,7 @@ const ScheduleCalendar = () => {
                     <div key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#fafafa', borderRadius: 4, border: '1px solid #f0f0f0' }}>
                       <span style={{ width: 10, height: 10, borderRadius: 2, background: SHIFT_COLORS[s.color] }} />
                       <span style={{ fontSize: 12 }}>{s.name} {s.startTime}-{s.endTime}</span>
-                      <Button type="link" size="small" onClick={() => applyShiftToAll(s.id)}>应用本月工作日</Button>
+                      <Button type="link" size="small" disabled={locked} onClick={() => applyShiftToAll(s.id)}>应用本月工作日</Button>
                     </div>
                   ))}
                 </div>
@@ -418,7 +421,7 @@ const ScheduleCalendar = () => {
         </Form>
       </Modal>
 
-      <Modal title="编辑排班" open={scheduleModal} onOk={submitSch} onCancel={() => setScheduleModal(false)} okText="保存" cancelText="取消" destroyOnClose>
+      <Modal title="编辑排班" open={scheduleModal} onOk={submitSch} onCancel={() => setScheduleModal(false)} okText="保存" cancelText="取消" okButtonProps={{ disabled: locked }} destroyOnClose>
         <Form form={schForm} layout="vertical" preserve={false}>
           <Row gutter={16}>
             <Col span={12}>
@@ -457,8 +460,8 @@ const ScheduleCalendar = () => {
             </Col>
           </Row>
           {editingSch && (
-            <Popconfirm title="确定删除该排班记录?" onConfirm={() => { deleteSchedule(editingSch.id); setScheduleModal(false); message.success('已删除'); }}>
-              <Button type="text" danger style={{ padding: 0 }}>删除此排班</Button>
+            <Popconfirm title="确定删除该排班记录?" disabled={locked} onConfirm={() => { if (locked) { message.warning('本月已结账'); return; } deleteSchedule(editingSch.id); setScheduleModal(false); message.success('已删除'); }}>
+              <Button type="text" danger style={{ padding: 0 }} disabled={locked}>删除此排班</Button>
             </Popconfirm>
           )}
         </Form>

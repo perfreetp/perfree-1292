@@ -107,54 +107,120 @@ export const useAppStore = create<AppState>()(
         shifts: st.shifts.filter((x) => x.id !== id),
       })),
 
-      addSchedule: (sc) => set((s) => ({ schedules: [...s.schedules, sc] })),
-      updateSchedule: (id, sc) => set((s) => ({
-        schedules: s.schedules.map((x) => x.id === id ? { ...x, ...sc } : x),
-      })),
-      deleteSchedule: (id) => set((s) => ({
-        schedules: s.schedules.filter((x) => x.id !== id),
-      })),
-      batchAddSchedules: (list) => set((s) => {
-        const existingKeys = new Set(s.schedules.map((x) => `${x.employeeId}_${x.date}`));
-        const filtered = list.filter((x) => !existingKeys.has(`${x.employeeId}_${x.date}`));
-        return { schedules: [...s.schedules, ...filtered] };
-      }),
+      addSchedule: (sc) => {
+        const st = get();
+        const month = dayjs(sc.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ schedules: [...st.schedules, sc] });
+      },
+      updateSchedule: (id, sc) => {
+        const st = get();
+        const old = st.schedules.find((x) => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ schedules: st.schedules.map((x) => x.id === id ? { ...x, ...sc } : x) });
+      },
+      deleteSchedule: (id) => {
+        const st = get();
+        const old = st.schedules.find((x) => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ schedules: st.schedules.filter((x) => x.id !== id) });
+      },
+      batchAddSchedules: (list) => {
+        const st = get();
+        const existingKeys = new Set(st.schedules.map((x) => `${x.employeeId}_${x.date}`));
+        const filtered = list.filter((x) => !existingKeys.has(`${x.employeeId}_${x.date}`) && !st.lockedMonths.includes(dayjs(x.date).format('YYYY-MM')));
+        set({ schedules: [...st.schedules, ...filtered] });
+      },
 
-      batchImportPunch: (list) => set((s) => {
-        const existingKeys = new Set(s.punchRecords.map((x) => `${x.employeeId}_${x.date}`));
-        const filtered = list.filter((x) => !existingKeys.has(`${x.employeeId}_${x.date}`));
-        return { punchRecords: [...s.punchRecords, ...filtered] };
-      }),
-      addPunch: (p) => set((s) => ({ punchRecords: [...s.punchRecords, p] })),
-      updatePunch: (id, p) => set((s) => ({
-        punchRecords: s.punchRecords.map((x) => x.id === id ? { ...x, ...p } : x),
-      })),
-      deletePunch: (id) => set((s) => ({
-        punchRecords: s.punchRecords.filter((x) => x.id !== id),
-      })),
+      batchImportPunch: (list) => {
+        const st = get();
+        const existingKeys = new Set(st.punchRecords.map((x) => `${x.employeeId}_${x.date}`));
+        const filtered = list.filter((x) => !existingKeys.has(`${x.employeeId}_${x.date}`) && !st.lockedMonths.includes(dayjs(x.date).format('YYYY-MM')));
+        set({ punchRecords: [...st.punchRecords, ...filtered] });
+      },
+      addPunch: (p) => {
+        const st = get();
+        const month = dayjs(p.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ punchRecords: [...st.punchRecords, p] });
+      },
+      updatePunch: (id, p) => {
+        const st = get();
+        const old = st.punchRecords.find((x) => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ punchRecords: st.punchRecords.map((x) => x.id === id ? { ...x, ...p } : x) });
+      },
+      deletePunch: (id) => {
+        const st = get();
+        const old = st.punchRecords.find((x) => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ punchRecords: st.punchRecords.filter((x) => x.id !== id) });
+      },
 
-      addException: (e) => set((s) => ({ exceptions: [...s.exceptions, e] })),
-      updateException: (id, e) => set((s) => ({
-        exceptions: s.exceptions.map((x) => x.id === id ? { ...x, ...e } : x),
-      })),
+      addException: (e) => {
+        const st = get();
+        const month = dayjs(e.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ exceptions: [...st.exceptions, e] });
+      },
+      updateException: (id, e) => {
+        const st = get();
+        const old = st.exceptions.find(x => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ exceptions: st.exceptions.map((x) => x.id === id ? { ...x, ...e } : x) });
+        if (e.handled) get().recalcPayrollForEmployee(old.employeeId, month);
+      },
       batchAddExceptions: (list) => set((s) => ({ exceptions: [...s.exceptions, ...list] })),
 
-      addMakeup: (m) => set((s) => {
+      recalcPayrollForEmployee: (employeeId: string, monthStr: string) => {
+        const s = get();
+        const payroll = s.payrolls.find(p => p.employeeId === employeeId && p.month === monthStr);
+        if (!payroll) return;
+        const emp = s.employees.find(e => e.id === employeeId);
+        if (!emp || !emp.active || dayjs(emp.joinDate).isAfter(monthStr + '-31')) return;
+        if (emp.leaveDate && dayjs(emp.leaveDate).isBefore(monthStr + '-01')) return;
+        const exc = s.exceptions.filter(e => e.employeeId === employeeId && e.date.startsWith(monthStr));
+        const lvDeduct = s.leaveRecords
+          .filter(r => r.employeeId === employeeId && r.status === 'approved' && dayjs(r.startDate).format('YYYY-MM') === monthStr)
+          .reduce((sum, r) => sum + (r.deductAmount || 0), 0);
+        const otPay = s.overtimeRecords
+          .filter(r => r.employeeId === employeeId && r.status === 'approved' && dayjs(r.overtimeDate).format('YYYY-MM') === monthStr)
+          .reduce((sum, r) => sum + (r.amount || 0), 0);
+        const sf = s.socialFunds.find(f => f.employeeId === employeeId && f.month === monthStr);
+        const updated = recalcOnePayroll({ payroll, employee: emp, socialFund: sf, monthLeaveDeduct: lvDeduct, monthOTPay: otPay, monthExceptions: exc, monthStr });
+        set({ payrolls: s.payrolls.map(p => p.id === payroll.id ? updated : p) });
+      },
+
+      addMakeup: (m) => {
+        const st = get();
+        const alreadyLocked = st.lockedMonths.includes(dayjs(m.date).format('YYYY-MM'));
         if (!m.approved) {
-          return { makeupRecords: [...s.makeupRecords, m] };
+          set({ makeupRecords: [...st.makeupRecords, m] });
+          return;
         }
-        const newMakeup = [...s.makeupRecords, m];
-        const punchIndex = s.punchRecords.findIndex((p) => p.employeeId === m.employeeId && p.date === m.date);
-        let newPunches = s.punchRecords;
+        if (alreadyLocked) return;
+        const newMakeup = [...st.makeupRecords, m];
+        const punchIndex = st.punchRecords.findIndex((p) => p.employeeId === m.employeeId && p.date === m.date);
+        let newPunches = st.punchRecords;
         if (punchIndex >= 0) {
-          const existing = s.punchRecords[punchIndex];
-          const updated = m.punchType === 'in'
+          const existing = st.punchRecords[punchIndex];
+          const upd = m.punchType === 'in'
             ? { ...existing, punchIn: m.correctedTime }
             : { ...existing, punchOut: m.correctedTime };
-          newPunches = s.punchRecords.map((p, i) => i === punchIndex ? updated : p);
+          newPunches = st.punchRecords.map((p, i) => i === punchIndex ? upd : p);
         } else {
           newPunches = [
-            ...s.punchRecords,
+            ...st.punchRecords,
             {
               id: `punch_mk_${m.id}`,
               employeeId: m.employeeId,
@@ -167,7 +233,7 @@ export const useAppStore = create<AppState>()(
           ];
         }
         const mkRemark = `补卡通过(${m.punchType === 'in' ? '上班' : '下班'}卡:${m.correctedTime})`;
-        const newExceptions = s.exceptions.map((e) => {
+        const newExceptions = st.exceptions.map((e) => {
           if (e.employeeId !== m.employeeId || e.date !== m.date) return e;
           if (e.type === 'missing_punch') return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
           if (e.type === 'absent') {
@@ -178,26 +244,35 @@ export const useAppStore = create<AppState>()(
           }
           return e;
         });
-        return { makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions };
-      }),
-      updateMakeup: (id, m) => set((s) => {
-        const old = s.makeupRecords.find((x) => x.id === id);
-        if (!old) return s;
+        const monthStr = dayjs(m.date).format('YYYY-MM');
+        set({ makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions });
+        get().recalcPayrollForEmployee(m.employeeId, monthStr);
+      },
+      updateMakeup: (id, m) => {
+        const st = get();
+        const old = st.makeupRecords.find((x) => x.id === id);
+        if (!old) return;
         const wasApproved = old.approved;
         const updated = { ...old, ...m };
-        const newMakeup = s.makeupRecords.map((x) => x.id === id ? updated : x);
-        if (!wasApproved && updated.approved) {
-          const punchIndex = s.punchRecords.findIndex((p) => p.employeeId === updated.employeeId && p.date === updated.date);
-          let newPunches = s.punchRecords;
+        const newMakeup = st.makeupRecords.map((x) => x.id === id ? updated : x);
+        const monthStr = dayjs(updated.date).format('YYYY-MM');
+        if (wasApproved && updated.approved) {
+          set({ makeupRecords: newMakeup });
+          return;
+        }
+        const locked = st.lockedMonths.includes(monthStr);
+        if (!wasApproved && updated.approved && !locked) {
+          const punchIndex = st.punchRecords.findIndex((p) => p.employeeId === updated.employeeId && p.date === updated.date);
+          let newPunches = st.punchRecords;
           if (punchIndex >= 0) {
-            const existing = s.punchRecords[punchIndex];
+            const existing = st.punchRecords[punchIndex];
             const upd = updated.punchType === 'in'
               ? { ...existing, punchIn: updated.correctedTime }
               : { ...existing, punchOut: updated.correctedTime };
-            newPunches = s.punchRecords.map((p, i) => i === punchIndex ? upd : p);
+            newPunches = st.punchRecords.map((p, i) => i === punchIndex ? upd : p);
           } else {
             newPunches = [
-              ...s.punchRecords,
+              ...st.punchRecords,
               {
                 id: `punch_mk_${id}`,
                 employeeId: updated.employeeId,
@@ -210,7 +285,7 @@ export const useAppStore = create<AppState>()(
             ];
           }
           const mkRemark = `补卡通过(${updated.punchType === 'in' ? '上班' : '下班'}卡:${updated.correctedTime})`;
-          const newExceptions = s.exceptions.map((e) => {
+          const newExceptions = st.exceptions.map((e) => {
             if (e.employeeId !== updated.employeeId || e.date !== updated.date) return e;
             if (e.type === 'missing_punch') return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
             if (e.type === 'absent') {
@@ -221,25 +296,31 @@ export const useAppStore = create<AppState>()(
             }
             return e;
           });
-          return { makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions };
+          set({ makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions });
+          get().recalcPayrollForEmployee(updated.employeeId, monthStr);
+          return;
         }
-        return { makeupRecords: newMakeup };
-      }),
-      approveMakeup: (id) => set((s) => {
-        const mk = s.makeupRecords.find((x) => x.id === id);
-        if (!mk || mk.approved) return s;
-        const newMakeup = s.makeupRecords.map((x) => x.id === id ? { ...x, approved: true } : x);
-        const punchIndex = s.punchRecords.findIndex((p) => p.employeeId === mk.employeeId && p.date === mk.date);
-        let newPunches = s.punchRecords;
+        if (!wasApproved && updated.approved && locked) return;
+        set({ makeupRecords: newMakeup });
+      },
+      approveMakeup: (id) => {
+        const st = get();
+        const mk = st.makeupRecords.find((x) => x.id === id);
+        if (!mk || mk.approved) return;
+        const monthStr = dayjs(mk.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(monthStr)) return;
+        const newMakeup = st.makeupRecords.map((x) => x.id === id ? { ...x, approved: true } : x);
+        const punchIndex = st.punchRecords.findIndex((p) => p.employeeId === mk.employeeId && p.date === mk.date);
+        let newPunches = st.punchRecords;
         if (punchIndex >= 0) {
-          const existing = s.punchRecords[punchIndex];
-          const updated = mk.punchType === 'in'
+          const existing = st.punchRecords[punchIndex];
+          const upd = mk.punchType === 'in'
             ? { ...existing, punchIn: mk.correctedTime }
             : { ...existing, punchOut: mk.correctedTime };
-          newPunches = s.punchRecords.map((p, i) => i === punchIndex ? updated : p);
+          newPunches = st.punchRecords.map((p, i) => i === punchIndex ? upd : p);
         } else {
           newPunches = [
-            ...s.punchRecords,
+            ...st.punchRecords,
             {
               id: `punch_mk_${id}`,
               employeeId: mk.employeeId,
@@ -252,7 +333,7 @@ export const useAppStore = create<AppState>()(
           ];
         }
         const mkRemark = `补卡通过(${mk.punchType === 'in' ? '上班' : '下班'}卡:${mk.correctedTime})`;
-        const newExceptions = s.exceptions.map((e) => {
+        const newExceptions = st.exceptions.map((e) => {
           if (e.employeeId !== mk.employeeId || e.date !== mk.date) return e;
           if (e.type === 'missing_punch') return { ...e, handled: true, handleType: 'makeup' as const, remark: e.remark ? `${e.remark};${mkRemark}` : mkRemark };
           if (e.type === 'absent') {
@@ -263,36 +344,97 @@ export const useAppStore = create<AppState>()(
           }
           return e;
         });
-        return { makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions };
-      }),
+        set({ makeupRecords: newMakeup, punchRecords: newPunches, exceptions: newExceptions });
+        get().recalcPayrollForEmployee(mk.employeeId, monthStr);
+      },
 
-      addLeave: (l) => set((s) => ({ leaveRecords: [...s.leaveRecords, l] })),
-      updateLeave: (id, l) => set((s) => ({
-        leaveRecords: s.leaveRecords.map((x) => x.id === id ? { ...x, ...l } : x),
-      })),
-      approveLeave: (id) => set((s) => ({
-        leaveRecords: s.leaveRecords.map((x) => x.id === id ? { ...x, approved: true } : x),
-      })),
-      deleteLeave: (id) => set((s) => ({
-        leaveRecords: s.leaveRecords.filter((x) => x.id !== id),
-      })),
+      addLeave: (l) => {
+        const st = get();
+        const month = dayjs(l.startDate).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ leaveRecords: [...st.leaveRecords, l] });
+      },
+      updateLeave: (id, l) => {
+        const st = get();
+        const old = st.leaveRecords.find(x => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.startDate).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ leaveRecords: st.leaveRecords.map((x) => x.id === id ? { ...x, ...l } : x) });
+      },
+      approveLeave: (id) => {
+        const st = get();
+        const old = st.leaveRecords.find(x => x.id === id);
+        if (!old || old.status === 'approved') return;
+        const month = dayjs(old.startDate).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ leaveRecords: st.leaveRecords.map((x) => x.id === id ? { ...x, status: 'approved' as const } : x) });
+        get().recalcPayrollForEmployee(old.employeeId, month);
+      },
+      deleteLeave: (id) => {
+        const st = get();
+        const old = st.leaveRecords.find(x => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.startDate).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ leaveRecords: st.leaveRecords.filter((x) => x.id !== id) });
+        get().recalcPayrollForEmployee(old.employeeId, month);
+      },
 
-      addOvertime: (o) => set((s) => ({ overtimeRecords: [...s.overtimeRecords, o] })),
-      updateOvertime: (id, o) => set((s) => ({
-        overtimeRecords: s.overtimeRecords.map((x) => x.id === id ? { ...x, ...o } : x),
-      })),
-      approveOvertime: (id) => set((s) => ({
-        overtimeRecords: s.overtimeRecords.map((x) => x.id === id ? { ...x, approved: true } : x),
-      })),
-      deleteOvertime: (id) => set((s) => ({
-        overtimeRecords: s.overtimeRecords.filter((x) => x.id !== id),
-      })),
+      addOvertime: (o) => {
+        const st = get();
+        const month = dayjs(o.overtimeDate || o.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ overtimeRecords: [...st.overtimeRecords, o] });
+      },
+      updateOvertime: (id, o) => {
+        const st = get();
+        const old = st.overtimeRecords.find(x => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.overtimeDate || old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ overtimeRecords: st.overtimeRecords.map((x) => x.id === id ? { ...x, ...o } : x) });
+      },
+      approveOvertime: (id) => {
+        const st = get();
+        const old = st.overtimeRecords.find(x => x.id === id);
+        if (!old || old.status === 'approved') return;
+        const month = dayjs(old.overtimeDate || old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ overtimeRecords: st.overtimeRecords.map((x) => x.id === id ? { ...x, status: 'approved' as const } : x) });
+        get().recalcPayrollForEmployee(old.employeeId, month);
+      },
+      deleteOvertime: (id) => {
+        const st = get();
+        const old = st.overtimeRecords.find(x => x.id === id);
+        if (!old) return;
+        const month = dayjs(old.overtimeDate || old.date).format('YYYY-MM');
+        if (st.lockedMonths.includes(month)) return;
+        set({ overtimeRecords: st.overtimeRecords.filter((x) => x.id !== id) });
+        get().recalcPayrollForEmployee(old.employeeId, month);
+      },
 
-      addSocialFund: (sf) => set((s) => ({ socialFunds: [...s.socialFunds, sf] })),
-      updateSocialFund: (id, sf) => set((s) => ({
-        socialFunds: s.socialFunds.map((x) => x.id === id ? { ...x, ...sf } : x),
-      })),
-      batchAddSocialFunds: (list) => set((s) => ({ socialFunds: [...s.socialFunds, ...list] })),
+      addSocialFund: (sf) => {
+        const st = get();
+        if (st.lockedMonths.includes(sf.month)) return;
+        set({ socialFunds: [...st.socialFunds, sf] });
+        get().recalcPayrollForEmployee(sf.employeeId, sf.month);
+      },
+      updateSocialFund: (id, sf) => {
+        const st = get();
+        const old = st.socialFunds.find(x => x.id === id);
+        if (!old) return;
+        if (st.lockedMonths.includes(old.month)) return;
+        set({ socialFunds: st.socialFunds.map((x) => x.id === id ? { ...x, ...sf } : x) });
+        get().recalcPayrollForEmployee(old.employeeId, old.month);
+      },
+      batchAddSocialFunds: (list) => {
+        const st = get();
+        const filtered = list.filter(sf => !st.lockedMonths.includes(sf.month));
+        if (filtered.length === 0) return;
+        set({ socialFunds: [...st.socialFunds, ...filtered] });
+        filtered.forEach(sf => get().recalcPayrollForEmployee(sf.employeeId, sf.month));
+      },
 
       addPayroll: (p) => set((s) => ({ payrolls: [...s.payrolls, p] })),
       updatePayroll: (id, p) => set((s) => ({

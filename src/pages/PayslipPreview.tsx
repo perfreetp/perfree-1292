@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAppStore } from '../store/useAppStore';
-import { genId } from '../utils/calculations';
+import { genId, calcExceptionDeduction } from '../utils/calculations';
 import type { Payroll, Payslip, Employee } from '../types';
 
 const PayslipPreview = () => {
@@ -207,11 +207,41 @@ const PayslipPreview = () => {
     const leaveTotalDays = empLeaves.reduce((s: number, l: any) => s + (l.days || 0), 0);
     const otTotalHours = empOvertimes.reduce((s: number, o: any) => s + (o.hours || 0), 0);
 
+    const excDeduct = calcExceptionDeduction(empExceptions, emp.baseSalary);
+    const excAmountOf = (excId: string) => excDeduct.perItem.find(p => p.id === excId)?.amount || 0;
+
     const dailyRecords: any[] = [];
-    empExceptions.forEach((e: any) => dailyRecords.push({ date: e.date, type: '异常', subType: e.type, desc: e.type === 'late' ? `迟到${e.minutes}分` : e.type === 'early' ? `早退${e.minutes}分` : e.type === 'absent' ? '旷工' : '缺卡', amount: e.handled ? 0 : null, handled: e.handled }));
-    empLeaves.forEach((l: any) => dailyRecords.push({ date: l.startDate, type: '请假', subType: l.type, desc: `${l.type} ${l.days}天`, amount: l.deductAmount || 0 }));
-    empOvertimes.forEach((o: any) => dailyRecords.push({ date: o.date, type: '加班', subType: o.type, desc: `${o.type === 'normal' ? '平时' : o.type === 'weekend' ? '周末' : '节假日'}加班 ${o.hours}小时`, amount: o.payAmount || 0 }));
+    empExceptions.forEach((e: any) => dailyRecords.push({
+      id: e.id,
+      date: e.date,
+      type: '异常',
+      subType: e.type,
+      desc: e.type === 'late' ? `迟到${e.minutes}分` : e.type === 'early' ? `早退${e.minutes}分` : e.type === 'absent' ? '旷工' : '缺卡',
+      amount: excAmountOf(e.id),
+      handled: e.handled,
+    }));
+    empLeaves.forEach((l: any) => dailyRecords.push({
+      id: l.id,
+      date: l.startDate,
+      type: '请假',
+      subType: l.type,
+      desc: `${l.type} ${l.days}天`,
+      amount: -(l.deductAmount || 0),
+    }));
+    empOvertimes.forEach((o: any) => dailyRecords.push({
+      id: o.id,
+      date: o.date,
+      type: '加班',
+      subType: o.type,
+      desc: `${o.type === 'normal' ? '平时' : o.type === 'weekend' ? '周末' : '节假日'}加班 ${o.hours}小时`,
+      amount: o.payAmount || 0,
+    }));
     dailyRecords.sort((a, b) => a.date.localeCompare(b.date));
+
+    const lateDeductionSum = (excDeduct.lateDeduct + excDeduct.earlyDeduct + excDeduct.absentDeduct + excDeduct.missingDeduct);
+    const leaveDeductionSum = empLeaves.reduce((s: number, l: any) => s + (l.deductAmount || 0), 0);
+    const overtimePaySum = empOvertimes.reduce((s: number, o: any) => s + (o.payAmount || 0), 0);
+    const attendTotalDeduction = lateDeductionSum + leaveDeductionSum - overtimePaySum;
     return (
       <div className="payroll-preview" id="print-area">
         <h2>员工工资单</h2>
@@ -286,32 +316,41 @@ const PayslipPreview = () => {
             <div style={{ padding: 10, background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 600, color: '#fa8c16' }}>{lateList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>次 / {lateTotalMin}分</span></div>
               <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>迟到</div>
+              <div style={{ fontSize: 13, marginTop: 4, color: '#cf1322', fontWeight: 600 }}>-¥{excDeduct.lateDeduct.toLocaleString()}</div>
             </div>
             <div style={{ padding: 10, background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 600, color: '#fa8c16' }}>{earlyList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>次 / {earlyTotalMin}分</span></div>
               <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>早退</div>
+              <div style={{ fontSize: 13, marginTop: 4, color: '#cf1322', fontWeight: 600 }}>-¥{excDeduct.earlyDeduct.toLocaleString()}</div>
             </div>
             <div style={{ padding: 10, background: '#fff1f0', border: '1px solid #ffa39e', borderRadius: 6, textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 600, color: '#ff4d4f' }}>{absentList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>天</span></div>
               <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>旷工</div>
+              <div style={{ fontSize: 13, marginTop: 4, color: '#cf1322', fontWeight: 600 }}>-¥{excDeduct.absentDeduct.toLocaleString()}</div>
             </div>
             <div style={{ padding: 10, background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 6, textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 600, color: '#faad14' }}>{missList.length}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>次</span></div>
               <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>缺卡</div>
+              <div style={{ fontSize: 13, marginTop: 4, color: 'rgba(0,0,0,0.45)' }}>已处理自动免扣</div>
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
             <div style={{ padding: 10, background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6, textAlign: 'center' }}>
               <div style={{ fontSize: 18, fontWeight: 600, color: '#52c41a' }}>{leaveTotalDays}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>天</span></div>
               <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>请假</div>
+              <div style={{ fontSize: 13, marginTop: 4, color: '#cf1322', fontWeight: 600 }}>-¥{leaveDeductionSum.toLocaleString()}</div>
             </div>
             <div style={{ padding: 10, background: '#e6f7ff', border: '1px solid #91d5ff', borderRadius: 6, textAlign: 'center' }}>
               <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff' }}>{otTotalHours}<span style={{ fontSize: 12, fontWeight: 400, marginLeft: 4 }}>小时</span></div>
               <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>加班</div>
+              <div style={{ fontSize: 13, marginTop: 4, color: '#52c41a', fontWeight: 600 }}>+¥{overtimePaySum.toLocaleString()}</div>
             </div>
             <div style={{ padding: 10, background: '#f9f0ff', border: '1px solid #d3adf7', borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 18, fontWeight: 600, color: '#722ed1' }}>¥{payroll.lateDeduction + payroll.leaveDeduction}</div>
-              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>考勤扣款合计</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#722ed1' }}>¥{(payroll.lateDeduction + payroll.leaveDeduction).toLocaleString()}</div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>考勤扣款合计（与薪资明细一致）</div>
+              <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', marginTop: 2 }}>
+                迟到{excDeduct.lateDeduct} + 早退{excDeduct.earlyDeduct} + 旷工{excDeduct.absentDeduct} + 请假{leaveDeductionSum.toLocaleString()}
+              </div>
             </div>
           </div>
 
@@ -336,7 +375,13 @@ const PayslipPreview = () => {
                       </td>
                       <td style={{ padding: '6px 10px', border: '1px solid #f0f0f0' }}>{r.desc}{r.handled ? '（已处理）' : ''}</td>
                       <td style={{ padding: '6px 10px', border: '1px solid #f0f0f0', textAlign: 'right' }}>
-                        {r.amount === null ? '-' : (r.type === '加班' ? <span style={{ color: '#52c41a' }}>+¥{r.amount}</span> : <span style={{ color: '#ff4d4f' }}>-¥{r.amount}</span>)}
+                        {r.amount === 0 && r.type === '异常' && !r.handled ? (
+                          <span style={{ color: 'rgba(0,0,0,0.45)' }}>不扣</span>
+                        ) : (r.handled ? (
+                          <span style={{ color: 'rgba(0,0,0,0.45)' }}>-</span>
+                        ) : (
+                          r.type === '加班' ? <span style={{ color: '#52c41a' }}>+¥{r.amount.toLocaleString()}</span> : <span style={{ color: '#ff4d4f' }}>{r.amount >= 0 ? '-' : ''}¥{Math.abs(r.amount).toLocaleString()}</span>
+                        ))}
                       </td>
                     </tr>
                   ))}

@@ -269,3 +269,112 @@ export function analyzeAttendanceExceptions(input: AttendanceAnalyzeInput): Atte
   });
   return exceptions;
 }
+
+export function calcLateEarlyDeduction(minutes: number): number {
+  if (minutes <= 10) return 0;
+  if (minutes <= 30) return 50;
+  if (minutes <= 60) return 100;
+  return 200;
+}
+
+export function calcExceptionDeduction(excList: any[], baseSalary: number): { lateDeduct: number; absentDeduct: number; missingDeduct: number; earlyDeduct: number; perItem: Array<{ id: string; amount: number }>; typeOfId: Record<string, string> } {
+  let lateDeduct = 0;
+  let absentDeduct = 0;
+  let missingDeduct = 0;
+  let earlyDeduct = 0;
+  const perItem: Array<{ id: string; amount: number }> = [];
+  const typeOfId: Record<string, string> = {};
+  const dailyWage = calculateDailyWage(baseSalary);
+  excList.forEach((e: any) => {
+    typeOfId[e.id] = e.type;
+    if (e.handled) { perItem.push({ id: e.id, amount: 0 }); return; }
+    if (e.type === 'late') {
+      const d = calcLateEarlyDeduction(e.minutes);
+      lateDeduct += d; perItem.push({ id: e.id, amount: d });
+    } else if (e.type === 'early') {
+      const d = calcLateEarlyDeduction(e.minutes);
+      earlyDeduct += d; perItem.push({ id: e.id, amount: d });
+    } else if (e.type === 'absent') {
+      absentDeduct += dailyWage; perItem.push({ id: e.id, amount: dailyWage });
+    } else {
+      perItem.push({ id: e.id, amount: 0 });
+    }
+  });
+  return {
+    lateDeduct: round2(lateDeduct),
+    absentDeduct: round2(absentDeduct),
+    missingDeduct: round2(missingDeduct),
+    earlyDeduct: round2(earlyDeduct),
+    perItem,
+    typeOfId,
+  };
+}
+
+import type { Employee, SalaryItem } from '../types';
+
+export function recalcOnePayroll(input: {
+  payroll: any;
+  employee: Employee;
+  socialFund: any;
+  monthLeaveDeduct: number;
+  monthOTPay: number;
+  monthExceptions: any[];
+  monthStr: string;
+  priorCumTax?: { taxable: number; tax: number };
+}): any {
+  const { payroll, employee, socialFund, monthLeaveDeduct, monthOTPay, monthExceptions, monthStr, priorCumTax } = input;
+  const personalSocial = socialFund ? (socialFund.pensionPersonal + socialFund.medicalPersonal + socialFund.unemploymentPersonal) : 0;
+  const personalHF = socialFund ? socialFund.housingFundPersonal : 0;
+  const socialPersonal = round2(personalSocial + personalHF);
+  const exc = calcExceptionDeduction(monthExceptions, employee.baseSalary);
+  const lateDeduction = round2(exc.lateDeduct + exc.absentDeduct + exc.earlyDeduct);
+  const leaveDeduction = round2(monthLeaveDeduct);
+  const overtimePay = round2(monthOTPay);
+  const bonus = payroll.bonus ?? 0;
+  const allowance = payroll.allowance ?? 0;
+  const otherIncome = payroll.otherIncome ?? 0;
+  const otherDeduction = payroll.otherDeduction ?? 0;
+  const performance = payroll.performanceSalary ?? round2(employee.baseSalary * 0.85);
+  const totalIncome = round2(employee.baseSalary + performance + overtimePay + bonus + allowance + otherIncome);
+
+  const taxableBase = totalIncome - socialPersonal - leaveDeduction - lateDeduction - otherDeduction;
+  const monthlyTaxable = Math.max(0, taxableBase - 5000);
+  const prev = priorCumTax || { taxable: 0, tax: 0 };
+  const personalTax = calculateMonthlyTax(monthlyTaxable, prev.taxable, prev.tax);
+
+  const totalDeduction = round2(socialPersonal + personalTax + leaveDeduction + lateDeduction + otherDeduction);
+  const netSalary = round2(totalIncome - totalDeduction);
+
+  const items: SalaryItem[] = [
+    { name: '基本工资', amount: employee.baseSalary, type: 'income', category: '固定工资' },
+    { name: '绩效工资', amount: performance, type: 'income', category: '绩效奖金' },
+    { name: '加班费', amount: overtimePay, type: 'income', category: '加班补贴' },
+    { name: '奖金', amount: bonus, type: 'income', category: '绩效奖金' },
+    { name: '岗位津贴', amount: allowance, type: 'income', category: '补贴津贴' },
+    { name: '其他收入', amount: otherIncome, type: 'income', category: '其他' },
+    { name: '养老保险个人', amount: socialFund?.pensionPersonal || 0, type: 'deduction', category: '社保公积金' },
+    { name: '医疗保险个人', amount: socialFund?.medicalPersonal || 0, type: 'deduction', category: '社保公积金' },
+    { name: '失业保险个人', amount: socialFund?.unemploymentPersonal || 0, type: 'deduction', category: '社保公积金' },
+    { name: '住房公积金个人', amount: personalHF, type: 'deduction', category: '社保公积金' },
+    { name: '个人所得税', amount: personalTax, type: 'deduction', category: '个人税' },
+    { name: '请假扣款', amount: leaveDeduction, type: 'deduction', category: '考勤扣款' },
+    { name: '迟到早退扣款', amount: lateDeduction, type: 'deduction', category: '考勤扣款' },
+    { name: '其他扣款', amount: otherDeduction, type: 'deduction', category: '其他' },
+  ];
+  return {
+    ...payroll,
+    baseSalary: employee.baseSalary,
+    performanceSalary: performance,
+    overtimePay,
+    totalIncome,
+    socialPersonal,
+    housingFundPersonal: personalHF,
+    personalTax,
+    leaveDeduction,
+    lateDeduction,
+    totalDeduction,
+    netSalary,
+    items,
+    updateTime: new Date().toISOString(),
+  };
+}

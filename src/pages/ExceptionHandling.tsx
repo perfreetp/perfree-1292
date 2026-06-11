@@ -113,6 +113,7 @@ const ExceptionHandling = () => {
   };
 
   const openMakeupAdd = () => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能新增补卡`); return; }
     setEditingMakeup(null);
     mkForm.resetFields();
     mkForm.setFieldsValue({
@@ -135,6 +136,7 @@ const ExceptionHandling = () => {
   };
 
   const submitMakeup = async () => {
+    if (locked) { message.warning(`${currentMonth} 已结账，不能编辑补卡`); return; }
     try {
       const v = await mkForm.validateFields();
       const data = {
@@ -301,7 +303,7 @@ const ExceptionHandling = () => {
                 <div className="toolbar">
                   <div className="toolbar-left" />
                   <div className="toolbar-right">
-                    <Button type="primary" icon={<PlusOutlined />} onClick={openMakeupAdd}>新增补卡申请</Button>
+                    <Button type="primary" icon={<PlusOutlined />} disabled={locked} onClick={openMakeupAdd}>新增补卡申请</Button>
                   </div>
                 </div>
                 <Table
@@ -366,13 +368,13 @@ const ExceptionHandling = () => {
               )}
             />
             {!currentExc.handled && (
-              <Button type="primary" block style={{ marginTop: 20 }} onClick={() => openHandle(currentExc)}>立即处理</Button>
+              <Button type="primary" block disabled={locked} style={{ marginTop: 20 }} onClick={() => { if (locked) return; openHandle(currentExc); }}>立即处理</Button>
             )}
           </div>
         )}
       </Drawer>
 
-      <Modal title="处理考勤异常" open={excHandleModal} onOk={confirmHandle} onCancel={() => setExcHandleModal(false)} okText="确认处理" cancelText="取消">
+      <Modal title="处理考勤异常" open={excHandleModal} onOk={confirmHandle} onCancel={() => setExcHandleModal(false)} okText="确认处理" cancelText="取消" okButtonProps={{ disabled: locked }}>
         {currentExc && (
           <div>
             <div style={{ background: '#fff7e6', padding: 12, borderRadius: 6, marginBottom: 16, border: '1px solid #ffd591' }}>
@@ -399,7 +401,7 @@ const ExceptionHandling = () => {
         )}
       </Modal>
 
-      <Modal title={editingMakeup ? '编辑补卡记录' : '新增补卡申请'} open={makeupModal} onOk={submitMakeup} onCancel={() => setMakeupModal(false)} okText="保存" cancelText="取消" destroyOnClose>
+      <Modal title={editingMakeup ? '编辑补卡记录' : '新增补卡申请'} open={makeupModal} onOk={submitMakeup} onCancel={() => setMakeupModal(false)} okText="保存" cancelText="取消" okButtonProps={{ disabled: locked }} destroyOnClose>
         <Form form={mkForm} layout="vertical" preserve={false}>
           <Row gutter={16}>
             <Col span={12}>
