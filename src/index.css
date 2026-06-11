@@ -1,0 +1,260 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  font-size: 14px;
+}
+
+body {
+  background: #f0f2f5;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.layout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 24px;
+  background: #001529;
+  color: #fff;
+}
+
+.layout-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+}
+
+.layout-title .logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #1677ff 0%, #69b1ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.layout-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-container {
+  padding: 16px;
+  height: 100%;
+  overflow: auto;
+}
+
+.page-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.page-desc {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.45);
+  margin-bottom: 16px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px 20px;
+  border: 1px solid #f0f0f0;
+}
+
+.stat-card .label {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.45);
+  margin-bottom: 4px;
+}
+
+.stat-card .value {
+  font-size: 24px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.stat-card .trend {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.calendar-cell {
+  min-height: 72px;
+  padding: 4px;
+  cursor: pointer;
+  position: relative;
+}
+
+.calendar-cell:hover {
+  background: #f5f5f5;
+}
+
+.calendar-cell .date-num {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.65);
+  margin-bottom: 4px;
+}
+
+.calendar-cell .date-num.today {
+  color: #1677ff;
+  font-weight: 600;
+}
+
+.calendar-cell .date-num.weekend {
+  color: #ff4d4f;
+}
+
+.shift-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin: 1px 0;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.payroll-preview {
+  background: #fff;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+}
+
+.payroll-preview h2 {
+  text-align: center;
+  margin: 0 0 8px;
+}
+
+.payroll-preview .sub {
+  text-align: center;
+  color: rgba(0, 0, 0, 0.45);
+  margin-bottom: 24px;
+  font-size: 13px;
+}
+
+.payroll-preview .info-row {
+  display: flex;
+  padding: 6px 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.payroll-preview .info-row .lbl {
+  width: 100px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.payroll-preview .info-row .val {
+  flex: 1;
+  font-weight: 500;
+}
+
+.payroll-section {
+  margin-top: 24px;
+}
+
+.payroll-section h3 {
+  font-size: 15px;
+  border-left: 3px solid #1677ff;
+  padding-left: 8px;
+  margin: 0 0 12px;
+}
+
+.payroll-total-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  font-weight: 600;
+  border-top: 2px solid #f0f0f0;
+  margin-top: 8px;
+}
+
+.payroll-net-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px;
+  background: #e6f4ff;
+  border-radius: 6px;
+  margin-top: 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1677ff;
+}
+
+.menu-sider {
+  overflow: auto;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  left: 0;
+}
